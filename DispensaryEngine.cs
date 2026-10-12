@@ -8,7 +8,7 @@ public class DispensaryEngine : MonoBehaviour
     {
         public string itemName;
         public int basePrice;
-        [HideInInspector] public int currentPrice; // Tracks dynamic daily deals
+        [HideInInspector] public int currentPrice;
     }
 
     [Header("--- SHOP INVENTORY ---")]
@@ -26,10 +26,11 @@ public class DispensaryEngine : MonoBehaviour
     [Header("--- IMMERSIVE SHOP UI ---")]
     public GameObject shopPanel;
     public Text shopText;
-    public GameObject promptTooltipUI; // "Press E to talk to Budtender" text pop-up
+    public GameObject promptTooltipUI; // Text pop-up: "Press E to Interact"
 
     private int shopSelectionIndex = 0;
     private bool isPlayerNearCounter = false;
+    private bool isPlayerNearATM = false;
     private bool isInsideShopMenu = false;
     private int discountItemIndex = -1;
 
@@ -38,7 +39,6 @@ public class DispensaryEngine : MonoBehaviour
         if (shopPanel != null) shopPanel.SetActive(false);
         if (promptTooltipUI != null) promptTooltipUI.SetActive(false);
         
-        // Reset prices to base values initially
         for (int i = 0; i < menuItems.Length; i++)
         {
             menuItems[i].currentPrice = menuItems[i].basePrice;
@@ -47,25 +47,44 @@ public class DispensaryEngine : MonoBehaviour
 
     private void Update()
     {
-        // If the player is standing at the counter, show the prompt to talk to the budtender
+        // Handle physical ATM interaction zone
+        if (isPlayerNearATM && !isInsideShopMenu)
+        {
+            if (promptTooltipUI != null)
+            {
+                promptTooltipUI.SetActive(true);
+                promptTooltipUI.GetComponent<Text>().text = "Press [E] to use Dispensary ATM";
+            }
+
+            if (Input.GetKeyDown(KeyCode.E) || Input.GetKeyDown(KeyCode.JoystickButton5))
+            {
+                InteractWithATM();
+            }
+            return;
+        }
+
+        // Handle physical Counter interaction zone
         if (isPlayerNearCounter && !isInsideShopMenu)
         {
-            if (promptTooltipUI != null) promptTooltipUI.SetActive(true);
+            if (promptTooltipUI != null)
+            {
+                promptTooltipUI.SetActive(true);
+                promptTooltipUI.GetComponent<Text>().text = "Press [E] to talk to Budtender";
+            }
 
-            // Press E or Xbox RB to talk to budtender and open menu
             if (Input.GetKeyDown(KeyCode.E) || Input.GetKeyDown(KeyCode.JoystickButton5))
             {
                 OpenDispensary();
             }
         }
-        else
+        else if (!isPlayerNearATM && !isPlayerNearCounter)
         {
             if (promptTooltipUI != null) promptTooltipUI.SetActive(false);
         }
 
-        // Shop Menu Controls
         if (!isInsideShopMenu) return;
 
+        // Shop Menu Navigation
         if (Input.GetKeyDown(KeyCode.DownArrow) || Input.GetKeyDown(KeyCode.S))
         {
             shopSelectionIndex = (shopSelectionIndex + 1) % menuItems.Length;
@@ -77,25 +96,24 @@ public class DispensaryEngine : MonoBehaviour
             RenderShopMenu();
         }
 
-        // Purchase Item
         if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.JoystickButton0))
         {
             TryPurchaseSelectedItem();
         }
 
-        // Manual exit out of menu window
         if (Input.GetKeyDown(KeyCode.Escape) || Input.GetKeyDown(KeyCode.JoystickButton1))
         {
             CloseDispensary();
         }
     }
 
-    // --- TRIGGER ZONES (Walk up to the counter) ---
+    // Dynamic checks using Object Names to distinguish Counter vs ATM zones
     private void OnTriggerEnter(Collider other)
     {
         if (other.CompareTag("Player"))
         {
-            isPlayerNearCounter = true;
+            if (gameObject.name.Contains("ATM")) isPlayerNearATM = true;
+            else isPlayerNearCounter = true;
         }
     }
 
@@ -103,19 +121,19 @@ public class DispensaryEngine : MonoBehaviour
     {
         if (other.CompareTag("Player"))
         {
+            isPlayerNearATM = false;
             isPlayerNearCounter = false;
-            CloseDispensary(); // Automatically shut menu if player walks away
+            CloseDispensary();
         }
     }
 
     public void OpenDispensary()
     {
         if (playerData == null) return;
-        
         isInsideShopMenu = true;
         shopSelectionIndex = 0;
         
-        if (playerScript != null) playerScript.enabled = false; // Freeze player physics
+        if (playerScript != null) playerScript.enabled = false;
         if (shopPanel != null) shopPanel.SetActive(true);
 
         CalculateDailyDeals();
@@ -124,7 +142,6 @@ public class DispensaryEngine : MonoBehaviour
 
     private void CalculateDailyDeals()
     {
-        // Pick one random item to mark down as a "Daily Special" (20% off)
         discountItemIndex = Random.Range(0, menuItems.Length);
         for (int i = 0; i < menuItems.Length; i++)
         {
@@ -139,7 +156,7 @@ public class DispensaryEngine : MonoBehaviour
     {
         isInsideShopMenu = false;
         if (shopPanel != null) shopPanel.SetActive(false);
-        if (playerScript != null) playerScript.enabled = true; // Return movement controls
+        if (playerScript != null) playerScript.enabled = true;
     }
 
     private void RenderShopMenu()
@@ -147,47 +164,36 @@ public class DispensaryEngine : MonoBehaviour
         if (shopText == null || playerData == null) return;
 
         shopText.text = "<b>=== GREEN LEAF DISPENSARY ===</b>\nCUSTOMER WALLET: $" + playerData.cashBalance + "\n\n";
-        
         for (int i = 0; i < menuItems.Length; i++)
         {
             string dealTag = (i == discountItemIndex) ? " <color=green>[🔥 DAILY SPECIAL - 20% OFF]</color>" : "";
-            
             if (i == shopSelectionIndex)
-            {
                 shopText.text += " > [" + menuItems[i].itemName + "] - $" + menuItems[i].currentPrice + dealTag + " <\n";
-            }
             else
-            {
                 shopText.text += "   " + menuItems[i].itemName + " - $" + menuItems[i].currentPrice + dealTag + "\n";
-            }
         }
-        
         shopText.text += "\n<i>[Space/A] Buy | [Escape/B] Exit Counter</i>";
     }
 
     private void TryPurchaseSelectedItem()
     {
         if (playerData == null) return;
-
         DispensaryItem selectedProduct = menuItems[shopSelectionIndex];
 
         if (playerData.cashBalance >= selectedProduct.currentPrice)
         {
             playerData.cashBalance -= selectedProduct.currentPrice;
             playerData.playerInventory.Add(selectedProduct.itemName);
-            
             playerData.UpdateHUD();
             RenderShopMenu();
         }
     }
 
-    // --- REAL LIFE ADDITION: THE DISPENSARY ATM MACHINE ---
     public void InteractWithATM()
     {
         if (playerData == null) return;
-        playerData.cashBalance += 500; // Withdraw $500 from bank
+        playerData.cashBalance += 500; // Adds $500 cash from bank vault
         playerData.UpdateHUD();
-        if (isInsideShopMenu) RenderShopMenu();
-        Debug.Log("Withdrew $500 from Dispensary ATM.");
+        Debug.Log("Withdrew $500 cash from the dispensary wall ATM.");
     }
 }
