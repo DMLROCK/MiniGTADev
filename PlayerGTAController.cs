@@ -15,6 +15,10 @@ public class PlayerGTAController : MonoBehaviour
     public ParticleSystem bongSmokeSystem;
     public BitLifeCustomizer inventoryData;
 
+    [Header("--- CRIME & POLICE MECHANICS ---")]
+    public int wantedLevel = 0;
+    private float crimeCooldownTimer = 0f;
+
     private Vector3 velocity;
     private bool isGrounded;
     [HideInInspector] public bool isDriving = false;
@@ -42,6 +46,9 @@ public class PlayerGTAController : MonoBehaviour
 
     private void Update()
     {
+        HandlePoliceLogic();
+        HandleTrippyCameraVisuals();
+
         if (isDriving) return;
         
         isGrounded = controller.isGrounded;
@@ -50,7 +57,6 @@ public class PlayerGTAController : MonoBehaviour
         ProcessGTAMovementInput();
         ProcessActionMechanicsInput();
         CheckForNearbyVehicles();
-        HandleTrippyCameraVisuals();
     }
 
     private void ProcessGTAMovementInput()
@@ -58,10 +64,9 @@ public class PlayerGTAController : MonoBehaviour
         float horiz = Input.GetAxis("Horizontal");
         float vert = Input.GetAxis("Vertical");
         
-        // If high, slightly sway inputs side to side to simulate poor balance
         if (isCurrentlyHigh)
         {
-            horiz += Mathf.Sin(Time.time * 2f) * 0.15f;
+            horiz += Mathf.Sin(Time.time * 2.5f) * 0.18f; // Makes player stumble subtly
         }
 
         Vector3 direction = new Vector3(horiz, 0f, vert).normalized;
@@ -96,8 +101,31 @@ public class PlayerGTAController : MonoBehaviour
                 if (inventoryData.playerInventory.Contains("Glass Vortex Rig") && bongSmokeSystem != null) bongSmokeSystem.Play();
                 else if (bluntSmokeSystem != null) bluntSmokeSystem.Play();
 
-                // Trigger the visual high effect for 15 seconds
-                TriggerHighVisualEffect(15.5f);
+                TriggerHighVisualEffect(20f);
+                
+                // Smoking illegal substances in public adds a 1-star wanted level if cops are nearby
+                if (wantedLevel < 1) TriggerCrimeAlert(1);
+            }
+        }
+    }
+
+    public void TriggerCrimeAlert(int levelsEarned)
+    {
+        wantedLevel = Mathf.Clamp(wantedLevel + levelsEarned, 0, 5);
+        crimeCooldownTimer = 25f; // Cops chase for 25 seconds before losing interest
+        if (inventoryData != null) inventoryData.UpdateHUD();
+    }
+
+    private void HandlePoliceLogic()
+    {
+        if (wantedLevel > 0)
+        {
+            crimeCooldownTimer -= Time.deltaTime;
+            if (crimeCooldownTimer <= 0)
+            {
+                wantedLevel = 0;
+                if (inventoryData != null) inventoryData.UpdateHUD();
+                Debug.Log("The cops lost your trail.");
             }
         }
     }
@@ -116,17 +144,14 @@ public class PlayerGTAController : MonoBehaviour
 
         if (highTimerDuration > 0)
         {
-            // Warps FOV smoothly back and forth to look psychedelic
-            float dynamicFOVModifier = Mathf.Sin(Time.time * 3.5f) * 8f; 
+            float dynamicFOVModifier = Mathf.Sin(Time.time * 3f) * 7.5f; 
             actualCameraComponent.fieldOfView = originalCameraFieldOfView + dynamicFOVModifier;
 
-            // Roll camera lens left and right subtly
-            float subtleTiltRoll = Mathf.Cos(Time.time * 2f) * 4f;
+            float subtleTiltRoll = Mathf.Cos(Time.time * 1.8f) * 3.5f;
             mainCamera.localRotation = Quaternion.Euler(mainCamera.localEulerAngles.x, mainCamera.localEulerAngles.y, subtleTiltRoll);
         }
         else
         {
-            // Effect finished, snap safely back to normal settings
             isCurrentlyHigh = false;
             actualCameraComponent.fieldOfView = Mathf.Lerp(actualCameraComponent.fieldOfView, originalCameraFieldOfView, 0.1f);
             mainCamera.localRotation = Quaternion.Lerp(mainCamera.localRotation, Quaternion.Euler(mainCamera.localEulerAngles.x, mainCamera.localEulerAngles.y, 0f), 0.1f);
