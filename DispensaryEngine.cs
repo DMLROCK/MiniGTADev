@@ -1,188 +1,132 @@
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
 public class DispensaryEngine : MonoBehaviour
 {
     [System.Serializable]
-    public class ShopProduct
+    public struct DispensaryItem
     {
-        public string name;
-        public int price;
+        public string itemName;
+        public int itemsPrice;
     }
 
-    [Header("--- STONER HIDEOUT STAFFING ---")]
-    public string primaryClerk = "Snoop Dogg";
-    public string assistantClerk = "FlightReacts";
-    public string securityStaff = "Tactical Security Guard";
+    [Header("--- SHOP INVENTORY ---")]
+    public DispensaryItem[] menuItems = new DispensaryItem[]
+    {
+        new DispensaryItem { itemName = "Premium Exotic Bud", itemsPrice = 250 },
+        new DispensaryItem { itemName = "Infused Fudge Brownie", itemsPrice = 45 },
+        new DispensaryItem { itemName = "Glass Vortex Rig", itemsPrice = 600 }
+    };
 
-    [Header("--- SYSTEM INTERFACES ---")]
-    public Transform shopDoorwayMarker;
-    public GameObject dashboardUIPanel;
-    public Text interfaceTextMesh;
-    public PlayerGTAController playerController;
-    public BitLifeCustomizer customizerDatabase;
+    [Header("--- LINKED GAME DATA ---")]
+    public BitLifeCustomizer playerData;
+    public PlayerGTAController playerScript;
 
-    public List<ShopProduct> dispensaryMenu = new List<ShopProduct>();
+    [Header("--- DISPENSARY UI WINDOWS ---")]
+    public GameObject shopPanel;
+    public Text shopText;
 
-    private int selectedProductIndex;
-    private bool isPlayerInsideStore;
-    private bool playerWasEnabledBeforeStore;
+    private int shopSelectionIndex = 0;
+    private bool isInsideShop = false;
 
     private void Start()
     {
-        // Add defaults only if the list is empty, preventing duplicate products
-        // when products have already been configured in the Inspector.
-        if (dispensaryMenu == null)
-            dispensaryMenu = new List<ShopProduct>();
-
-        if (dispensaryMenu.Count == 0)
-        {
-            dispensaryMenu.Add(new ShopProduct { name = "Premium Exotic Bud", price = 150 });
-            dispensaryMenu.Add(new ShopProduct { name = "Glass Vortex Rig", price = 600 });
-            dispensaryMenu.Add(new ShopProduct { name = "Concentrate Vaporizer Pen", price = 350 });
-            dispensaryMenu.Add(new ShopProduct { name = "Infused Fudge Brownie", price = 50 });
-        }
-
-        if (dashboardUIPanel != null)
-            dashboardUIPanel.SetActive(false);
+        if (shopPanel != null) shopPanel.SetActive(false);
     }
 
     private void Update()
     {
-        if (playerController == null || shopDoorwayMarker == null)
-            return;
-
-        float spatialGap = Vector3.Distance(
-            playerController.transform.position, shopDoorwayMarker.position);
-
-        if (!isPlayerInsideStore && spatialGap <= 3.5f && !playerController.isDriving)
-            TriggerShopMenuOpen();
-
-        if (isPlayerInsideStore)
-            ProcessStoreMenuInputs();
-    }
-
-    private void TriggerShopMenuOpen()
-    {
-        isPlayerInsideStore = true;
-
-        if (dashboardUIPanel != null)
-            dashboardUIPanel.SetActive(true);
-
-        playerWasEnabledBeforeStore = playerController.enabled;
-        playerController.enabled = false;
-        RenderDispensaryLayoutScreen();
-    }
-
-    private void ProcessStoreMenuInputs()
-    {
-        if (dispensaryMenu == null || dispensaryMenu.Count == 0)
+        // Toggle the shop menu open or closed manually using the P key for testing
+        if (Input.GetKeyDown(KeyCode.P))
         {
-            if (interfaceTextMesh != null)
-                interfaceTextMesh.text = "The shop currently has no products.\nPress Escape / Controller B to leave.";
+            if (isInsideShop) CloseDispensary();
+            else OpenDispensary();
+        }
+
+        if (!isInsideShop) return;
+
+        // Navigate shop items using Up/Down Arrow keys or W/S
+        if (Input.GetKeyDown(KeyCode.DownArrow) || Input.GetKeyDown(KeyCode.S))
+        {
+            shopSelectionIndex = (shopSelectionIndex + 1) % menuItems.Length;
+            RenderShopMenu();
+        }
+        if (Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.W))
+        {
+            shopSelectionIndex = (shopSelectionIndex - 1 + menuItems.Length) % menuItems.Length;
+            RenderShopMenu();
+        }
+
+        // Buy item using Space key or Xbox A Button
+        if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.JoystickButton0))
+        {
+            TryPurchaseSelectedItem();
+        }
+    }
+
+    public void OpenDispensary()
+    {
+        if (playerData == null) return;
+        
+        isInsideShop = true;
+        shopSelectionIndex = 0;
+        
+        if (playerScript != null) playerScript.enabled = false; // Freeze player movement while shopping
+        if (shopPanel != null) shopPanel.SetActive(true);
+        
+        RenderShopMenu();
+    }
+
+    public void CloseDispensary()
+    {
+        isInsideShop = false;
+        
+        if (shopPanel != null) shopPanel.SetActive(false);
+        if (playerScript != null) playerScript.enabled = true; // Give control back to movement
+    }
+
+    private void RenderShopMenu()
+    {
+        if (shopText == null || playerData == null) return;
+
+        shopText.text = "<b>=== GREEN LEAF DISPENSARY ===</b>\nYOUR CASH: $" + playerData.cashBalance + "\n\nAVAILABLE PRODUCTS:\n";
+        
+        for (int i = 0; i < menuItems.Length; i++)
+        {
+            if (i == shopSelectionIndex)
+            {
+                shopText.text += " > [" + menuItems[i].itemName + "] - $" + menuItems[i].itemsPrice + " <\n";
+            }
+            else
+            {
+                shopText.text += "   " + menuItems[i].itemName + " - $" + menuItems[i].itemsPrice + "\n";
+            }
+        }
+        
+        shopText.text += "\n<i>Press [Space] to Buy | Press [P] to Exit Shop</i>";
+    }
+
+    private void TryPurchaseSelectedItem()
+    {
+        if (playerData == null) return;
+
+        DispensaryItem selectedProduct = menuItems[shopSelectionIndex];
+
+        if (playerData.cashBalance >= selectedProduct.itemsPrice)
+        {
+            // Deduct money and add product directly to the profile inventory list
+            playerData.cashBalance -= selectedProduct.itemsPrice;
+            playerData.playerInventory.Add(selectedProduct.itemName);
+            
+            // Instantly tell the HUD canvas to display the new item and money count
+            playerData.UpdateHUD();
+            RenderShopMenu();
+            
+            Debug.Log("Purchased: " + selectedProduct.itemName);
         }
         else
         {
-            if (Input.GetKeyDown(KeyCode.DownArrow) || Input.GetKeyDown(KeyCode.S))
-            {
-                selectedProductIndex = (selectedProductIndex + 1) % dispensaryMenu.Count;
-                RenderDispensaryLayoutScreen();
-            }
-
-            if (Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.W))
-            {
-                selectedProductIndex = (selectedProductIndex - 1 + dispensaryMenu.Count) % dispensaryMenu.Count;
-                RenderDispensaryLayoutScreen();
-            }
-
-            if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.JoystickButton0))
-                PurchaseSelectedProduct();
+            Debug.LogWarning("Not enough money to buy " + selectedProduct.itemName);
         }
-
-        if (Input.GetKeyDown(KeyCode.Escape) || Input.GetKeyDown(KeyCode.JoystickButton1))
-            CloseShop();
-    }
-
-    private void PurchaseSelectedProduct()
-    {
-        if (customizerDatabase == null || dispensaryMenu == null ||
-            dispensaryMenu.Count == 0 || selectedProductIndex < 0 ||
-            selectedProductIndex >= dispensaryMenu.Count)
-            return;
-
-        ShopProduct activeSelection = dispensaryMenu[selectedProductIndex];
-        if (activeSelection == null || string.IsNullOrWhiteSpace(activeSelection.name) ||
-            activeSelection.price < 0)
-            return;
-
-        if (customizerDatabase.cashBalance < activeSelection.price)
-        {
-            if (interfaceTextMesh != null)
-                interfaceTextMesh.text += "\n\nNot enough cash for this item.";
-            return;
-        }
-
-        if (customizerDatabase.playerInventory == null)
-            customizerDatabase.playerInventory = new List<string>();
-
-        customizerDatabase.cashBalance -= activeSelection.price;
-        customizerDatabase.playerInventory.Add(activeSelection.name);
-
-        RenderDispensaryLayoutScreen();
-        customizerDatabase.UpdateHUD();
-    }
-
-    private void CloseShop()
-    {
-        isPlayerInsideStore = false;
-
-        if (dashboardUIPanel != null)
-            dashboardUIPanel.SetActive(false);
-
-        if (playerController != null)
-        {
-            playerController.enabled = playerWasEnabledBeforeStore;
-            playerController.transform.position += new Vector3(0f, 0f, -3f);
-        }
-    }
-
-    private void RenderDispensaryLayoutScreen()
-    {
-        if (interfaceTextMesh == null || customizerDatabase == null)
-            return;
-
-        string clerkDialogue = selectedProductIndex == 0
-            ? "[" + primaryClerk + "]: 'Welcome! Take a look at today's selection.'"
-            : "[" + assistantClerk + "]: 'Take a look at the selection!'";
-
-        interfaceTextMesh.text =
-            "=== STONER HIDEOUT SHOP ===\n" +
-            "[STAFF]: " + securityStaff + "\n\n" +
-            clerkDialogue + "\n\n" +
-            "YOUR CURRENT WALLET: $" + customizerDatabase.cashBalance +
-            "\n--------------------------------------------------\n";
-
-        if (dispensaryMenu == null || dispensaryMenu.Count == 0)
-        {
-            interfaceTextMesh.text += "No products available.\n";
-        }
-        else
-        {
-            selectedProductIndex = Mathf.Clamp(selectedProductIndex, 0, dispensaryMenu.Count - 1);
-            for (int i = 0; i < dispensaryMenu.Count; i++)
-            {
-                ShopProduct product = dispensaryMenu[i];
-                if (product == null)
-                    continue;
-
-                interfaceTextMesh.text += i == selectedProductIndex
-                    ? " ==> [" + product.name + " - $" + product.price + "] <==\n"
-                    : "     " + product.name + " - $" + product.price + "\n";
-            }
-        }
-
-        interfaceTextMesh.text +=
-            "\n[Space / Controller A] Purchase  |  [Escape / Controller B] Leave";
     }
 }
