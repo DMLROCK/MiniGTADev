@@ -1,184 +1,195 @@
 using UnityEngine;
+using UnityEngine.UI;
 
-public class PlayerGTAController : MonoBehaviour
+public class DispensaryEngine : MonoBehaviour
 {
-    [Header("--- GTA PHYSICS & MOVEMENT ---")]
-    public CharacterController controller;
-    public Transform mainCamera;
-    public float walkSpeed = 5.0f;
-    public float sprintSpeed = 9.0f;
-    public float jumpHeight = 2.0f;
-    public float gravityForce = -25.0f; 
-
-    [Header("--- INTERACTIVE ITEM HANDLING ---")]
-    public ParticleSystem bluntSmokeSystem;
-    public ParticleSystem bongSmokeSystem;
-    public BitLifeCustomizer inventoryData;
-
-    [Header("--- CRIME & POLICE MECHANICS ---")]
-    public int wantedLevel = 0;
-    private float crimeCooldownTimer = 0f;
-
-    private Vector3 velocity;
-    private bool isGrounded;
-    [HideInInspector] public bool isDriving = false;
-
-    // Camera High Effect Variables
-    private bool isCurrentlyHigh = false;
-    private float highTimerDuration = 0f;
-    private float originalCameraFieldOfView;
-    private Camera actualCameraComponent;
-
-    private void Awake()
+    [System.Serializable]
+    public struct DispensaryItem
     {
-        QualitySettings.vSyncCount = 1;
-        Application.targetFrameRate = 60;
+        public string itemName;
+        public int basePrice;
+        [HideInInspector] public int currentPrice;
     }
+
+    [Header("--- SHOP INVENTORY ---")]
+    public DispensaryItem[] menuItems = new DispensaryItem[]
+    {
+        new DispensaryItem { itemName = "Premium Exotic Bud", basePrice = 250 },
+        new DispensaryItem { itemName = "Infused Fudge Brownie", basePrice = 45 },
+        new DispensaryItem { itemName = "Glass Vortex Rig", basePrice = 600 }
+    };
+
+    [Header("--- LINKED GAME DATA ---")]
+    public BitLifeCustomizer playerData;
+    public PlayerGTAController playerScript;
+
+    [Header("--- IMMERSIVE SHOP UI ---")]
+    public GameObject shopPanel;
+    public Text shopText;
+    public GameObject promptTooltipUI;
+
+    private int shopSelectionIndex = 0;
+    private bool isPlayerNearCounter = false;
+    private bool isPlayerNearATM = false;
+    private bool isInsideShopMenu = false;
+    private int discountItemIndex = -1;
 
     private void Start()
     {
-        if (mainCamera != null)
+        if (shopPanel != null) shopPanel.SetActive(false);
+        if (promptTooltipUI != null) promptTooltipUI.SetActive(false);
+        
+        for (int i = 0; i < menuItems.Length; i++)
         {
-            actualCameraComponent = mainCamera.GetComponent<Camera>();
-            if (actualCameraComponent != null) originalCameraFieldOfView = actualCameraComponent.fieldOfView;
+            menuItems[i].currentPrice = menuItems[i].basePrice;
         }
     }
 
     private void Update()
     {
-        HandlePoliceLogic();
-        HandleTrippyCameraVisuals();
+        if (isPlayerNearATM && !isInsideShopMenu)
+        {
+            if (promptTooltipUI != null)
+            {
+                promptTooltipUI.SetActive(true);
+                promptTooltipUI.GetComponent<Text>().text = "Press [E] to use Dispensary ATM";
+            }
 
-        if (isDriving) return;
+            if (Input.GetKeyDown(KeyCode.E) || Input.GetKeyDown(KeyCode.JoystickButton5))
+            {
+                InteractWithATM();
+            }
+            return;
+        }
+
+        if (isPlayerNearCounter && !isInsideShopMenu)
+        {
+            if (promptTooltipUI != null)
+            {
+                promptTooltipUI.SetActive(true);
+                promptTooltipUI.GetComponent<Text>().text = "Press [E] to talk to Budtender";
+            }
+
+            if (Input.GetKeyDown(KeyCode.E) || Input.GetKeyDown(KeyCode.JoystickButton5))
+            {
+                OpenDispensary();
+            }
+        }
+        else if (!isPlayerNearATM && !isPlayerNearCounter)
+        {
+            if (promptTooltipUI != null) promptTooltipUI.SetActive(false);
+        }
+
+        if (!isInsideShopMenu) return;
+
+        if (Input.GetKeyDown(KeyCode.DownArrow) || Input.GetKeyDown(KeyCode.S))
+        {
+            shopSelectionIndex = (shopSelectionIndex + 1) % menuItems.Length;
+            RenderShopMenu();
+        }
+        if (Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.W))
+        {
+            shopSelectionIndex = (shopSelectionIndex - 1 + menuItems.Length) % menuItems.Length;
+            RenderShopMenu();
+        }
+
+        if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.JoystickButton0))
+        {
+            TryPurchaseSelectedItem();
+        }
+
+        if (Input.GetKeyDown(KeyCode.Escape) || Input.GetKeyDown(KeyCode.JoystickButton1))
+        {
+            CloseDispensary();
+        }
+    }
+
+    private void OnTriggerEnter(Collider other)
+    {
+        if (other.CompareTag("Player"))
+        {
+            if (gameObject.name.Contains("ATM")) isPlayerNearATM = true;
+            else isPlayerNearCounter = true;
+        }
+    }
+
+    private void OnTriggerExit(Collider other)
+    {
+        if (other.CompareTag("Player"))
+        {
+            isPlayerNearATM = false;
+            isPlayerNearCounter = false;
+            CloseDispensary();
+        }
+    }
+
+    public void OpenDispensary()
+    {
+        if (playerData == null) return;
+        isInsideShopMenu = true;
+        shopSelectionIndex = 0;
         
-        isGrounded = controller.isGrounded;
-        if (isGrounded && velocity.y < 0) velocity.y = -2f; 
+        if (playerScript != null) playerScript.enabled = false;
+        if (shopPanel != null) shopPanel.SetActive(true);
 
-        ProcessGTAMovementInput();
-        ProcessActionMechanicsInput();
-        CheckForNearbyVehicles();
+        CalculateDailyDeals();
+        RenderShopMenu();
     }
 
-    private void ProcessGTAMovementInput()
+    private void CalculateDailyDeals()
     {
-        float horiz = Input.GetAxis("Horizontal");
-        float vert = Input.GetAxis("Vertical");
-        
-        if (isCurrentlyHigh)
+        discountItemIndex = Random.Range(0, menuItems.Length);
+        for (int i = 0; i < menuItems.Length; i++)
         {
-            horiz += Mathf.Sin(Time.time * 2.5f) * 0.18f; // Makes player stumble subtly
-        }
-
-        Vector3 direction = new Vector3(horiz, 0f, vert).normalized;
-
-        if (direction.magnitude >= 0.1f)
-        {
-            bool isSprinting = Input.GetKey(KeyCode.JoystickButton8) || Input.GetKey(KeyCode.LeftShift);
-            float currentMoveSpeed = isSprinting ? sprintSpeed : walkSpeed;
-            float targetAngle = Mathf.Atan2(direction.x, direction.z) * Mathf.Rad2Deg + mainCamera.eulerAngles.y;
-            Vector3 moveDir = Quaternion.Euler(0f, targetAngle, 0f) * Vector3.forward;
-
-            controller.Move(moveDir.normalized * currentMoveSpeed * Time.deltaTime);
-            transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.Euler(0f, targetAngle, 0f), 0.25f);
-        }
-
-        if ((Input.GetButtonDown("Jump") || Input.GetKeyDown(KeyCode.JoystickButton0)) && isGrounded)
-        {
-            velocity.y = Mathf.Sqrt(jumpHeight * -2.0f * gravityForce);
-        }
-
-        velocity.y += gravityForce * Time.deltaTime;
-        controller.Move(velocity * Time.deltaTime);
-    }
-
-    private void ProcessActionMechanicsInput()
-    {
-        if (inventoryData == null) return;
-        if (Input.GetKeyDown(KeyCode.JoystickButton5) || Input.GetKeyDown(KeyCode.E))
-        {
-            if (inventoryData.playerInventory.Contains("Premium Exotic Bud") || inventoryData.playerInventory.Contains("Infused Fudge Brownie"))
-            {
-                if (inventoryData.playerInventory.Contains("Glass Vortex Rig") && bongSmokeSystem != null) bongSmokeSystem.Play();
-                else if (bluntSmokeSystem != null) bluntSmokeSystem.Play();
-
-                TriggerHighVisualEffect(20f);
-                
-                // Smoking illegal substances in public adds a 1-star wanted level if cops are nearby
-                if (wantedLevel < 1) TriggerCrimeAlert(1);
-            }
+            if (i == discountItemIndex)
+                menuItems[i].currentPrice = Mathf.RoundToInt(menuItems[i].basePrice * 0.80f);
+            else
+                menuItems[i].currentPrice = menuItems[i].basePrice;
         }
     }
 
-    public void TriggerCrimeAlert(int levelsEarned)
+    public void CloseDispensary()
     {
-        wantedLevel = Mathf.Clamp(wantedLevel + levelsEarned, 0, 5);
-        crimeCooldownTimer = 25f; // Cops chase for 25 seconds before losing interest
-        if (inventoryData != null) inventoryData.UpdateHUD();
+        isInsideShopMenu = false;
+        if (shopPanel != null) shopPanel.SetActive(false);
+        if (playerScript != null) playerScript.enabled = true;
     }
 
-    private void HandlePoliceLogic()
+    private void RenderShopMenu()
     {
-        if (wantedLevel > 0)
+        if (shopText == null || playerData == null) return;
+
+        shopText.text = "<b>=== GREEN LEAF DISPENSARY ===</b>\nCUSTOMER WALLET: $" + playerData.cashBalance + "\n\n";
+        for (int i = 0; i < menuItems.Length; i++)
         {
-            crimeCooldownTimer -= Time.deltaTime;
-            if (crimeCooldownTimer <= 0)
-            {
-                wantedLevel = 0;
-                if (inventoryData != null) inventoryData.UpdateHUD();
-                Debug.Log("The cops lost your trail.");
-            }
+            string dealTag = (i == discountItemIndex) ? " <color=green>[🔥 DAILY SPECIAL - 20% OFF]</color>" : "";
+            if (i == shopSelectionIndex)
+                shopText.text += " > [" + menuItems[i].itemName + "] - $" + menuItems[i].currentPrice + dealTag + " <\n";
+            else
+                shopText.text += "   " + menuItems[i].itemName + " - $" + menuItems[i].currentPrice + dealTag + "\n";
+        }
+        shopText.text += "\n<i>[Space/A] Buy | [Escape/B] Exit Counter</i>";
+    }
+
+    private void TryPurchaseSelectedItem()
+    {
+        if (playerData == null) return;
+        DispensaryItem selectedProduct = menuItems[shopSelectionIndex];
+
+        if (playerData.cashBalance >= selectedProduct.currentPrice)
+        {
+            playerData.cashBalance -= selectedProduct.currentPrice;
+            playerData.playerInventory.Add(selectedProduct.itemName);
+            playerData.UpdateHUD();
+            RenderShopMenu();
         }
     }
 
-    private void TriggerHighVisualEffect(float duration)
+    public void InteractWithATM()
     {
-        isCurrentlyHigh = true;
-        highTimerDuration = duration;
-    }
-
-    private void HandleTrippyCameraVisuals()
-    {
-        if (!isCurrentlyHigh || actualCameraComponent == null) return;
-
-        highTimerDuration -= Time.deltaTime;
-
-        if (highTimerDuration > 0)
-        {
-            float dynamicFOVModifier = Mathf.Sin(Time.time * 3f) * 7.5f; 
-            actualCameraComponent.fieldOfView = originalCameraFieldOfView + dynamicFOVModifier;
-
-            float subtleTiltRoll = Mathf.Cos(Time.time * 1.8f) * 3.5f;
-            mainCamera.localRotation = Quaternion.Euler(mainCamera.localEulerAngles.x, mainCamera.localEulerAngles.y, subtleTiltRoll);
-        }
-        else
-        {
-            isCurrentlyHigh = false;
-            actualCameraComponent.fieldOfView = Mathf.Lerp(actualCameraComponent.fieldOfView, originalCameraFieldOfView, 0.1f);
-            mainCamera.localRotation = Quaternion.Lerp(mainCamera.localRotation, Quaternion.Euler(mainCamera.localEulerAngles.x, mainCamera.localEulerAngles.y, 0f), 0.1f);
-        }
-    }
-
-    private void CheckForNearbyVehicles()
-    {
-        if (Input.GetKeyDown(KeyCode.F) || Input.GetKeyDown(KeyCode.JoystickButton2))
-        {
-            RealisticVehicleEngine[] vehicles = FindObjectsByType<RealisticVehicleEngine>(FindObjectsSortMode.None);
-            foreach (RealisticVehicleEngine vehicle in vehicles)
-            {
-                float distance = Vector3.Distance(transform.position, vehicle.transform.position);
-                if (distance <= 3.5f)
-                {
-                    vehicle.EnterVehicle();
-                    break;
-                }
-            }
-        }
-    }
-
-    public void TeleportAndExitVehicle(Vector3 exitPosition)
-    {
-        transform.position = exitPosition;
-        isDriving = false;
-        gameObject.SetActive(true);
+        if (playerData == null) return;
+        playerData.cashBalance += 500; 
+        playerData.UpdateHUD();
+        Debug.Log("Withdrew $500 cash from the bank vault via ATM.");
     }
 }
