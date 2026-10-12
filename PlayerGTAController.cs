@@ -15,6 +15,11 @@ public class PlayerGTAController : MonoBehaviour
     public ParticleSystem bongSmokeSystem;
     public BitLifeCustomizer inventoryData;
 
+    [Header("--- WEAPONS SYSTEMS ---")]
+    public string activeWeaponName = "Unarmed"; // Options: "Unarmed", "Pistol", "Rifle"
+    public ParticleSystem weaponMuzzleFlash;
+    public Transform firePoint;
+
     [Header("--- CRIME & POLICE MECHANICS ---")]
     public int wantedLevel = 0;
     private float crimeCooldownTimer = 0f;
@@ -23,7 +28,6 @@ public class PlayerGTAController : MonoBehaviour
     private bool isGrounded;
     [HideInInspector] public bool isDriving = false;
 
-    // Camera High Effect Variables
     private bool isCurrentlyHigh = false;
     private float highTimerDuration = 0f;
     private float originalCameraFieldOfView;
@@ -46,7 +50,6 @@ public class PlayerGTAController : MonoBehaviour
 
     private void Update()
     {
-        // Block processing if the active scene timescale is frozen to avoid input leaks
         if (Time.timeScale == 0f) return;
 
         HandlePoliceLogic();
@@ -59,6 +62,7 @@ public class PlayerGTAController : MonoBehaviour
 
         ProcessGTAMovementInput();
         ProcessActionMechanicsInput();
+        HandleWeaponCombatInput();
         CheckForNearbyVehicles();
     }
 
@@ -66,14 +70,9 @@ public class PlayerGTAController : MonoBehaviour
     {
         float horiz = Input.GetAxis("Horizontal");
         float vert = Input.GetAxis("Vertical");
-        
-        if (isCurrentlyHigh)
-        {
-            horiz += Mathf.Sin(Time.time * 2.5f) * 0.18f;
-        }
+        if (isCurrentlyHigh) horiz += Mathf.Sin(Time.time * 2.5f) * 0.18f;
 
         Vector3 direction = new Vector3(horiz, 0f, vert).normalized;
-
         if (direction.magnitude >= 0.1f)
         {
             bool isSprinting = Input.GetKey(KeyCode.JoystickButton8) || Input.GetKey(KeyCode.LeftShift);
@@ -110,10 +109,55 @@ public class PlayerGTAController : MonoBehaviour
         }
     }
 
+    private void HandleWeaponCombatInput()
+    {
+        // Cycle inventory weapons manually using Keyboard Q or Joystick Button 3 (Y)
+        if (Input.GetKeyDown(KeyCode.Q) || Input.GetKeyDown(KeyCode.JoystickButton3))
+        {
+            CycleWeapons();
+        }
+
+        // Fire Weapons using Left Mouse Click or Right Trigger Axis
+        if (Input.GetButtonDown("Fire1") || Input.GetKeyDown(KeyCode.JoystickButton5))
+        {
+            if (activeWeaponName != "Unarmed") ExecuteWeaponFireRaycast();
+        }
+    }
+
+    private void CycleWeapons()
+    {
+        if (activeWeaponName == "Unarmed") activeWeaponName = "Pistol";
+        else if (activeWeaponName == "Pistol") activeWeaponName = "Rifle";
+        else activeWeaponName = "Unarmed";
+
+        if (inventoryData != null) inventoryData.UpdateHUD();
+    }
+
+    private void ExecuteWeaponFireRaycast()
+    {
+        if (weaponMuzzleFlash != null) weaponMuzzleFlash.Play();
+        TriggerCrimeAlert(1); // Discharging firearms automatically raises 1 Wanted Star
+
+        Vector3 rayOrigin = firePoint != null ? firePoint.position : transform.position + transform.forward;
+        RaycastHit hit;
+        
+        if (Physics.Raycast(rayOrigin, transform.forward, out hit, 50f))
+        {
+            Debug.Log("Bullet impacted object named: " + hit.collider.gameObject.name);
+            
+            // If weapon bullet hits an ambient citizen walking past, step up chase alert levels
+            if (hit.collider.CompareTag("Civilian"))
+            {
+                TriggerCrimeAlert(2); 
+                Destroy(hit.collider.gameObject); // Clean elimination execution
+            }
+        }
+    }
+
     public void TriggerCrimeAlert(int levelsEarned)
     {
         wantedLevel = Mathf.Clamp(wantedLevel + levelsEarned, 0, 5);
-        crimeCooldownTimer = 25f; 
+        crimeCooldownTimer = 25f;
         if (inventoryData != null) inventoryData.UpdateHUD();
 
         #if UNITY_2023_1_OR_NEWER
@@ -122,10 +166,7 @@ public class PlayerGTAController : MonoBehaviour
         CityTrafficAI trafficManager = FindObjectOfType<CityTrafficAI>();
         #endif
 
-        if (trafficManager != null)
-        {
-            trafficManager.DispatchStateInterceptors(transform.position);
-        }
+        if (trafficManager != null) trafficManager.DispatchStateInterceptors(transform.position);
     }
 
     private void HandlePoliceLogic()
@@ -137,7 +178,6 @@ public class PlayerGTAController : MonoBehaviour
             {
                 wantedLevel = 0;
                 if (inventoryData != null) inventoryData.UpdateHUD();
-                Debug.Log("The cops lost your trail.");
             }
         }
     }
@@ -151,14 +191,12 @@ public class PlayerGTAController : MonoBehaviour
     private void HandleTrippyCameraVisuals()
     {
         if (!isCurrentlyHigh || actualCameraComponent == null) return;
-
         highTimerDuration -= Time.deltaTime;
 
         if (highTimerDuration > 0)
         {
             float dynamicFOVModifier = Mathf.Sin(Time.time * 3f) * 7.5f; 
             actualCameraComponent.fieldOfView = originalCameraFieldOfView + dynamicFOVModifier;
-
             float subtleTiltRoll = Mathf.Cos(Time.time * 1.8f) * 3.5f;
             mainCamera.localRotation = Quaternion.Euler(mainCamera.localEulerAngles.x, mainCamera.localEulerAngles.y, subtleTiltRoll);
         }
@@ -182,8 +220,7 @@ public class PlayerGTAController : MonoBehaviour
 
             foreach (RealisticVehicleEngine vehicle in vehicles)
             {
-                float distance = Vector3.Distance(transform.position, vehicle.transform.position);
-                if (distance <= 3.5f)
+                if (Vector3.Distance(transform.position, vehicle.transform.position) <= 3.5f)
                 {
                     vehicle.EnterVehicle();
                     break;
