@@ -46,6 +46,9 @@ public class PlayerGTAController : MonoBehaviour
 
     private void Update()
     {
+        // Block processing if the active scene timescale is frozen to avoid input leaks
+        if (Time.timeScale == 0f) return;
+
         HandlePoliceLogic();
         HandleTrippyCameraVisuals();
 
@@ -66,7 +69,7 @@ public class PlayerGTAController : MonoBehaviour
         
         if (isCurrentlyHigh)
         {
-            horiz += Mathf.Sin(Time.time * 2.5f) * 0.18f; // Makes player stumble subtly
+            horiz += Mathf.Sin(Time.time * 2.5f) * 0.18f;
         }
 
         Vector3 direction = new Vector3(horiz, 0f, vert).normalized;
@@ -102,8 +105,6 @@ public class PlayerGTAController : MonoBehaviour
                 else if (bluntSmokeSystem != null) bluntSmokeSystem.Play();
 
                 TriggerHighVisualEffect(20f);
-                
-                // Smoking illegal substances in public adds a 1-star wanted level if cops are nearby
                 if (wantedLevel < 1) TriggerCrimeAlert(1);
             }
         }
@@ -112,10 +113,9 @@ public class PlayerGTAController : MonoBehaviour
     public void TriggerCrimeAlert(int levelsEarned)
     {
         wantedLevel = Mathf.Clamp(wantedLevel + levelsEarned, 0, 5);
-        crimeCooldownTimer = 25f; // Cops chase for 25 seconds before losing interest
+        crimeCooldownTimer = 25f; 
         if (inventoryData != null) inventoryData.UpdateHUD();
 
-        // Find the dispatcher script and send an interceptor to the player's exact location
         #if UNITY_2023_1_OR_NEWER
         CityTrafficAI trafficManager = FindFirstObjectByType<CityTrafficAI>();
         #else
