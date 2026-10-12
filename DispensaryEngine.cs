@@ -5,113 +5,117 @@ using System.Collections.Generic;
 public class DispensaryEngine : MonoBehaviour
 {
     [System.Serializable]
-    public class ShopItem
-    {
-        public string name;
-        public int cost;
-    }
+    public class ShopProduct { public string name; public int price; }
 
-    public Transform storeTrigger;
-    public GameObject shopUIPlane;
-    public Text shopMenuText;
-    public PlayerAndCar movementScript;
-    public BitLifeCustomizer characterData;
+    [Header("--- STONER HIDEOUT STAFFING ---")]
+    public string primaryClerk = "Snoop Dogg";
+    public string assistantClerk = "FlightReacts";
+    public string securityStaff = "Tactical Security Guard";
 
-    public List<ShopItem> stonerHideoutMenu = new List<ShopItem>();
-    private int selectedIndex = 0;
-    private bool insideShop = false;
+    [Header("--- SYSTEM INTERFACES ---")]
+    public Transform shopDoorwayMarker;
+    public GameObject dashboardUIPanel;
+    public Text interfaceTextMesh;
+    public PlayerGTAController playerController;
+    public BitLifeCustomizer customizerDatabase;
+
+    public List<ShopProduct> dispensaryMenu = new List<ShopProduct>();
+    private int selectedProductIndex = 0;
+    private bool isPlayerInsideStore = false;
 
     private void Start()
     {
-        stonerHideoutMenu.Add(new ShopItem { name = "Premium Exotic Bud", cost = 150 });
-        stonerHideoutMenu.Add(new ShopItem { name = "Glass Vortex Rig", cost = 600 });
-        stonerHideoutMenu.Add(new ShopItem { name = "Concentrate Vaporizer Pen", cost = 350 });
-        stonerHideoutMenu.Add(new ShopItem { name = "Infused Fudge Brownie", cost = 50 });
-        
-        if (shopUIPlane != null) shopUIPlane.SetActive(false);
+        dispensaryMenu.Add(new ShopProduct { name = "Premium Exotic Bud", price = 150 });
+        dispensaryMenu.Add(new ShopProduct { name = "Glass Vortex Rig", price = 600 });
+        dispensaryMenu.Add(new ShopProduct { name = "Concentrate Vaporizer Pen", price = 350 });
+        dispensaryMenu.Add(new ShopProduct { name = "Infused Fudge Brownie", price = 50 });
+
+        if (dashboardUIPanel != null) dashboardUIPanel.SetActive(false);
     }
 
     private void Update()
     {
-        if (movementScript == null || movementScript.player3D == null || storeTrigger == null) return;
+        if (playerController == null || shopDoorwayMarker == null) return;
 
-        float distance = Vector3.Distance(movementScript.player3D.transform.position, storeTrigger.position);
+        float spatialGap = Vector3.Distance(playerController.transform.position, shopDoorwayMarker.position);
 
-        // Enter Stoner Hideout
-        if (!insideShop && distance <= 3.5f && !movementScript.isDriving)
+        if (!isPlayerInsideStore && spatialGap <= 3.5f && !playerController.isDriving)
         {
-            EnterShop();
+            TriggerShopMenuOpen();
         }
 
-        if (insideShop)
+        if (isPlayerInsideStore)
         {
-            HandleShopMenuInput();
+            ProcessStoreMenuInputs();
         }
     }
 
-    private void EnterShop()
+    private void TriggerShopMenuOpen()
     {
-        insideShop = true;
-        if (shopUIPlane != null) shopUIPlane.SetActive(true);
-        if (movementScript != null) movementScript.enabled = false; // Freeze 3D movement while shopping
-        RenderShopText();
+        isPlayerInsideStore = true;
+        if (dashboardUIPanel != null) dashboardUIPanel.SetActive(true);
+        playerController.enabled = false; // Freeze physical movement while interacting with inventory grids
+        RenderDispensaryLayoutScreen();
     }
 
-    private void HandleShopMenuInput()
+    private void ProcessStoreMenuInputs()
     {
-        // Scroll Menu (D-Pad Up/Down)
         if (Input.GetKeyDown(KeyCode.DownArrow) || Input.GetKeyDown(KeyCode.S))
         {
-            selectedIndex = (selectedIndex + 1) % stonerHideoutMenu.Count;
-            RenderShopText();
+            selectedProductIndex = (selectedProductIndex + 1) % dispensaryMenu.Count;
+            RenderDispensaryLayoutScreen();
         }
         if (Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.W))
         {
-            selectedIndex = (selectedIndex - 1 + stonerHideoutMenu.Count) % stonerHideoutMenu.Count;
-            RenderShopText();
+            selectedProductIndex = (selectedProductIndex - 1 + dispensaryMenu.Count) % dispensaryMenu.Count;
+            RenderDispensaryLayoutScreen();
         }
 
-        // Buy Item (Xbox A Button)
+        // Buy (Xbox A Button / Joystick Button 0)
         if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.JoystickButton0))
         {
-            ShopItem item = stonerHideoutMenu[selectedIndex];
-            if (characterData != null && characterData.cashBalance >= item.cost)
+            ShopProduct activeSelection = dispensaryMenu[selectedProductIndex];
+            if (customizerDatabase != null && customizerDatabase.cashBalance >= activeSelection.price)
             {
-                characterData.cashBalance -= item.cost;
-                characterData.playerInventory.Add(item.name);
-                RenderShopText();
-                characterData.UpdateHUD();
+                customizerDatabase.cashBalance -= activeSelection.price;
+                customizerDatabase.playerInventory.Add(activeSelection.name);
+                RenderDispensaryLayoutScreen();
+                customizerDatabase.UpdateHUD();
             }
         }
 
-        // Exit Shop (Xbox B Button)
+        // Exit Store (Xbox B Button / Joystick Button 1)
         if (Input.GetKeyDown(KeyCode.Escape) || Input.GetKeyDown(KeyCode.JoystickButton1))
         {
-            insideShop = false;
-            if (shopUIPlane != null) shopUIPlane.SetActive(false);
-            if (movementScript != null)
-            {
-                movementScript.enabled = true;
-                movementScript.player3D.transform.position += new Vector3(0f, 0f, -2.5f); // Step back from door
-            }
+            isPlayerInsideStore = false;
+            if (dashboardUIPanel != null) dashboardUIPanel.SetActive(false);
+            playerController.enabled = true;
+            playerController.transform.position += new Vector3(0f, 0f, -3.0f); // Push character outside guard checkpoint safely
         }
     }
 
-    private void RenderShopText()
+    private void RenderDispensaryLayoutScreen()
     {
-        if (shopMenuText == null || characterData == null) return;
-        
-        shopMenuText.text = "<b>=== WELCOME TO THE STONER HIDEOUT ===</b>\n" +
-                            "CASH: $" + characterData.cashBalance + "\n\n";
+        if (interfaceTextMesh == null || customizerDatabase == null) return;
 
-        for (int i = 0; i < stonerHideoutMenu.Count; i++)
+        // Custom, dynamic character voice generation blocks if no outside models are loaded yet
+        string clerkDialogue = (selectedProductIndex == 0) 
+            ? "<b>[" + primaryClerk + "]:</b> 'Drop it like it's hot, nephew. That's top shelf organic right there.'" 
+            : "<b>[" + assistantClerk + "]:</b> 'Look at the detail! No way man, look at the scaling! Is that real?! LETS GOOO!'";
+
+        interfaceTextMesh.text = "<b>=== STONER HIDEOUT SHOP MAIN OFFICE ===</b>\n" +
+                                  "<b>[SECURITY STATUS]:</b> " + securityStaff + " standing guard at main entrance.\n\n" +
+                                  clerkDialogue + "\n\n" +
+                                  "<b>YOUR CURRENT WALLET:</b> $" + customizerDatabase.cashBalance + "\n" +
+                                  "--------------------------------------------------\n";
+
+        for (int i = 0; i < dispensaryMenu.Count; i++)
         {
-            if (i == selectedIndex)
-                shopMenuText.text += " > [" + stonerHideoutMenu[i].name + " - $" + stonerHideoutMenu[i].cost + "] <\n";
+            if (i == selectedProductIndex)
+                interfaceTextMesh.text += "  ==> [" + dispensaryMenu[i].name + " - $" + dispensaryMenu[i].price + "] <==\n";
             else
-                shopMenuText.text += "   " + stonerHideoutMenu[i].name + " - $" + stonerHideoutMenu[i].cost + "\n";
+                interfaceTextMesh.text += "      " + dispensaryMenu[i].name + " - $" + dispensaryMenu[i].price + "\n";
         }
-        shopMenuText.text += "\n<i>[A] Buy  |  [B] Exit Shop</i>";
+        interfaceTextMesh.text += "\n\n<i>[Xbox A] Purchase Selected Good  |  [Xbox B] Walk Out Past Security</i>";
     }
 }
-
