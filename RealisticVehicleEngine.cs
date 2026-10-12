@@ -1,10 +1,8 @@
 using UnityEngine;
 
-[RequireComponent(typeof(Rigidbody))]
 public class RealisticVehicleEngine : MonoBehaviour
 {
     public enum VehicleType { TeslaCybertruck, DodgeScatPack }
-
     [Header("--- AUTOMOTIVE SELECTION ---")]
     public VehicleType specificModel = VehicleType.DodgeScatPack;
 
@@ -13,100 +11,94 @@ public class RealisticVehicleEngine : MonoBehaviour
     public PlayerGTAController playerScript;
     public Transform mainCamera;
 
-    [Header("--- VEHICLE TUNING ---")]
-    [Tooltip("Approximate maximum speed in metres per second.")]
-    public float cybertruckTopSpeed = 58f;
-    public float scatPackTopSpeed = 78f;
-    public float acceleration = 18f;
-    public float brakingAcceleration = 28f;
-    public float steeringDegreesPerSecond = 75f;
-
+    private float engineHorsepower;
     private float driftHandlingTraction;
     private float electronicTopSpeed;
-
-    private void Awake()
-    {
-        if (vehicleRigidbody == null)
-            vehicleRigidbody = GetComponent<Rigidbody>();
-    }
 
     private void Start()
     {
         if (specificModel == VehicleType.TeslaCybertruck)
         {
-            driftHandlingTraction = 0.85f;
-            electronicTopSpeed = cybertruckTopSpeed;
+            engineHorsepower = 3200f;       
+            driftHandlingTraction = 0.85f;  
+            electronicTopSpeed = 130f;
         }
-        else
+        else if (specificModel == VehicleType.DodgeScatPack)
         {
-            driftHandlingTraction = 0.40f;
-            electronicTopSpeed = scatPackTopSpeed;
+            engineHorsepower = 2200f;       
+            driftHandlingTraction = 0.40f;  
+            electronicTopSpeed = 175f;
+        }
+    }
+
+    private void Update()
+    {
+        // Listen for exit command if currently driving the car
+        if (playerScript != null && playerScript.isDriving)
+        {
+            if (Input.GetKeyDown(KeyCode.F) || Input.GetKeyDown(KeyCode.JoystickButton2))
+            {
+                ExitVehicle();
+            }
         }
     }
 
     private void FixedUpdate()
     {
-        if (playerScript == null || !playerScript.isDriving || vehicleRigidbody == null)
-            return;
+        if (playerScript == null || !playerScript.isDriving) return;
 
         float steeringInput = Input.GetAxis("Horizontal");
-        float acceleratorInput = GetAxisIfAvailable("Xbox_RightTrigger");
-        float brakeInput = GetAxisIfAvailable("Xbox_LeftTrigger");
+        float acceleratorTrigger = Input.GetAxis("Xbox_RightTrigger");
+        float brakeTrigger = Input.GetAxis("Xbox_LeftTrigger");
 
-        // These custom axes are not present in Unity by default. Keyboard fallback
-        // is used when they are missing or have no input.
-        if (acceleratorInput <= 0.01f && brakeInput <= 0.01f)
+        if (acceleratorTrigger == 0 && brakeTrigger == 0)
         {
-            acceleratorInput = Input.GetKey(KeyCode.W) ? 1f : 0f;
-            brakeInput = Input.GetKey(KeyCode.S) ? 1f : 0f;
+            acceleratorTrigger = Input.GetKey(KeyCode.W) ? 1.0f : 0.0f;
+            brakeTrigger = Input.GetKey(KeyCode.S) ? 1.0f : 0.0f;
         }
 
-        Vector3 forwardVelocity = Vector3.Project(vehicleRigidbody.velocity, transform.forward);
-        float forwardSpeed = forwardVelocity.magnitude;
-
-        if (acceleratorInput > 0.05f && vehicleRigidbody.velocity.magnitude < electronicTopSpeed)
-            vehicleRigidbody.AddForce(transform.forward * acceleratorInput * acceleration, ForceMode.Acceleration);
-
-        if (brakeInput > 0.05f)
-            vehicleRigidbody.AddForce(-transform.forward * brakeInput * brakingAcceleration, ForceMode.Acceleration);
-
-        // Limit forward speed without abruptly blocking reverse movement.
-        Vector3 horizontalVelocity = new Vector3(vehicleRigidbody.velocity.x, 0f, vehicleRigidbody.velocity.z);
-        if (horizontalVelocity.magnitude > electronicTopSpeed)
+        if (vehicleRigidbody.velocity.magnitude < electronicTopSpeed)
         {
-            Vector3 limited = horizontalVelocity.normalized * electronicTopSpeed;
-            vehicleRigidbody.velocity = new Vector3(limited.x, vehicleRigidbody.velocity.y, limited.z);
+            if (acceleratorTrigger > 0.05f) vehicleRigidbody.AddForce(transform.forward * acceleratorTrigger * engineHorsepower * Time.fixedDeltaTime, ForceMode.VelocityChange);
+            if (brakeTrigger > 0.05f) vehicleRigidbody.AddForce(-transform.forward * brakeTrigger * engineHorsepower * Time.fixedDeltaTime, ForceMode.VelocityChange);
         }
 
-        if (vehicleRigidbody.velocity.magnitude > 1f)
+        if (vehicleRigidbody.velocity.magnitude > 1.0f)
         {
-            float directionSign = Vector3.Dot(transform.forward, vehicleRigidbody.velocity) >= 0f ? 1f : -1f;
-            float tractionSteering = Mathf.Lerp(steeringDegreesPerSecond, steeringDegreesPerSecond * 0.65f,
-                driftHandlingTraction);
-            transform.Rotate(Vector3.up, steeringInput * tractionSteering * directionSign * Time.fixedDeltaTime);
+            float dynamicTractionModifier = Vector3.Dot(transform.forward, vehicleRigidbody.velocity.normalized);
+            float turningForce = steeringInput * (specificModel == VehicleType.DodgeScatPack ? 40f : 25f);
+            transform.Rotate(Vector3.up, turningForce * driftHandlingTraction * Time.fixedDeltaTime * dynamicTractionModifier);
+        }
+
+        // Lock camera back relative to the speeding vehicle
+        if (mainCamera != null)
+        {
+            Vector3 targetCamPos = transform.position - (transform.forward * 6f) + (Vector3.up * 2.5f);
+            mainCamera.position = Vector3.Lerp(mainCamera.position, targetCamPos, 0.1f);
+            mainCamera.LookAt(transform.position + (transform.forward * 2f));
         }
     }
 
-    private float GetAxisIfAvailable(string axisName)
+    public void EnterVehicle()
     {
-        try
-        {
-            return Mathf.Clamp01(Input.GetAxis(axisName));
-        }
-        catch (System.ArgumentException)
-        {
-            return 0f;
-        }
+        if (playerScript == null) return;
+
+        playerScript.isDriving = true;
+        playerScript.gameObject.SetActive(false); // Hide the driver model inside the car
+        
+        // Attach driver transform to car so they stay anchored together
+        playerScript.transform.SetParent(this.transform); 
     }
 
-    private void LateUpdate()
+    public void ExitVehicle()
     {
-        if (playerScript == null || !playerScript.isDriving || mainCamera == null)
-            return;
+        if (playerScript == null) return;
 
-        Vector3 targetPosition = transform.position +
-                                 transform.rotation * new Vector3(0f, 4.5f, -8.5f);
-        mainCamera.position = Vector3.Lerp(mainCamera.position, targetPosition, 8f * Time.deltaTime);
-        mainCamera.LookAt(transform.position + Vector3.up);
+        playerScript.transform.SetParent(null); // Detach driver from car hierarchy
+        
+        // Calculate safe ground point out to the left side of the vehicle door
+        Vector3 exitSideOffset = transform.position - (transform.right * 1.8f) + (Vector3.up * 0.5f);
+        
+        playerScript.TeleportAndExitVehicle(exitSideOffset);
     }
 }
