@@ -13,6 +13,7 @@ public class BitLifeCustomizer : MonoBehaviour
     public GameObject customizerPanel;
     public Text customizerText;
     public Text mainGameplayHUD;
+    public GameObject pausePanel; // Drag your pause menu background here
 
     [Header("--- SCRIPTS ---")]
     public PlayerGTAController movementScript;
@@ -21,16 +22,40 @@ public class BitLifeCustomizer : MonoBehaviour
     private int outfitIndex = 0;
     private bool isCustomizing = true;
     private string chosenOutfit = "Casual Hoodie";
+    private bool isPaused = false;
 
     private void Start()
     {
-        if (movementScript != null) movementScript.enabled = false; 
-        if (customizerPanel != null) customizerPanel.SetActive(true);
-        RenderCustomizer();
+        if (pausePanel != null) pausePanel.SetActive(false);
+        
+        // Check if a save game already exists on the player's computer
+        if (PlayerPrefs.HasKey("Saved_CashBalance"))
+        {
+            LoadGameData();
+            isCustomizing = false;
+            if (customizerPanel != null) customizerPanel.SetActive(false);
+            if (movementScript != null) movementScript.enabled = true;
+            UpdateHUD();
+        }
+        else
+        {
+            if (movementScript != null) movementScript.enabled = false; 
+            if (customizerPanel != null) customizerPanel.SetActive(true);
+            RenderCustomizer();
+        }
     }
 
     private void Update()
     {
+        // Press Escape or Start Button on controller to toggle Pause Menu & Trigger Auto-Save
+        if (Input.GetKeyDown(KeyCode.Escape) || Input.GetKeyDown(KeyCode.JoystickButton7))
+        {
+            if (!isCustomizing)
+            {
+                TogglePauseGame();
+            }
+        }
+
         if (!isCustomizing) return;
 
         if (Input.GetKeyDown(KeyCode.DownArrow) || Input.GetKeyDown(KeyCode.S))
@@ -50,6 +75,7 @@ public class BitLifeCustomizer : MonoBehaviour
             isCustomizing = false;
             if (customizerPanel != null) customizerPanel.SetActive(false);
             if (movementScript != null) movementScript.enabled = true; 
+            SaveGameData(); // Initial auto-save upon spawning
             UpdateHUD();
         }
     }
@@ -66,12 +92,63 @@ public class BitLifeCustomizer : MonoBehaviour
         customizerText.text += "\n<i>Press [Space/A Button] to Spawn Into World</i>";
     }
 
+    public void TogglePauseGame()
+    {
+        isPaused = !isPaused;
+
+        if (isPaused)
+        {
+            Time.timeScale = 0f; // Freezes all physics, animations, and movement instantly
+            if (pausePanel != null) pausePanel.SetActive(true);
+            
+            SaveGameData(); // <--- AUTOMATICALLY SAVES THE GAME UPON PAUSING!
+            Debug.Log("Game Paused. Progress automatically saved to disk.");
+        }
+        else
+        {
+            Time.timeScale = 1f; // Resumes game physics clock speed back to normal
+            if (pausePanel != null) pausePanel.SetActive(false);
+        }
+    }
+
+    // --- ENGINES FOR COMPUTER HARD DRIVE SAVING ---
+    public void SaveGameData()
+    {
+        PlayerPrefs.SetString("Saved_CharacterName", characterName);
+        PlayerPrefs.SetInt("Saved_CashBalance", cashBalance);
+        PlayerPrefs.SetString("Saved_ChosenOutfit", chosenOutfit);
+
+        // Compress inventory strings together split by a comma to store list values safely
+        string compressedInventory = string.Join(",", playerInventory.ToArray());
+        PlayerPrefs.SetString("Saved_PlayerInventory", compressedInventory);
+
+        PlayerPrefs.Save(); // Forces data write out to local system registries
+    }
+
+    public void LoadGameData()
+    {
+        characterName = PlayerPrefs.GetString("Saved_CharacterName", "Jay");
+        cashBalance = PlayerPrefs.GetInt("Saved_CashBalance", 4200);
+        chosenOutfit = PlayerPrefs.GetString("Saved_ChosenOutfit", "Casual Hoodie");
+
+        string compressedInventory = PlayerPrefs.GetString("Saved_PlayerInventory", "");
+        playerInventory.Clear();
+        
+        if (!string.IsNullOrEmpty(compressedInventory))
+        {
+            string[] items = compressedInventory.Split(',');
+            foreach (string item in items)
+            {
+                if (!string.IsNullOrEmpty(item)) playerInventory.Add(item);
+            }
+        }
+    }
+
     public void UpdateHUD()
     {
         if (mainGameplayHUD == null) return;
         string inventoryString = playerInventory.Count > 0 ? string.Join(", ", playerInventory.ToArray()) : "Empty";
         
-        // Grab wanted stars from the movement script if available
         string wantedStars = "";
         if (movementScript != null)
         {
