@@ -114,6 +114,18 @@ public class PlayerGTAController : MonoBehaviour
         wantedLevel = Mathf.Clamp(wantedLevel + levelsEarned, 0, 5);
         crimeCooldownTimer = 25f; // Cops chase for 25 seconds before losing interest
         if (inventoryData != null) inventoryData.UpdateHUD();
+
+        // Find the dispatcher script and send an interceptor to the player's exact location
+        #if UNITY_2023_1_OR_NEWER
+        CityTrafficAI trafficManager = FindFirstObjectByType<CityTrafficAI>();
+        #else
+        CityTrafficAI trafficManager = FindObjectOfType<CityTrafficAI>();
+        #endif
+
+        if (trafficManager != null)
+        {
+            trafficManager.DispatchStateInterceptors(transform.position);
+        }
     }
 
     private void HandlePoliceLogic()
@@ -162,7 +174,12 @@ public class PlayerGTAController : MonoBehaviour
     {
         if (Input.GetKeyDown(KeyCode.F) || Input.GetKeyDown(KeyCode.JoystickButton2))
         {
+            #if UNITY_2023_1_OR_NEWER
             RealisticVehicleEngine[] vehicles = FindObjectsByType<RealisticVehicleEngine>(FindObjectsSortMode.None);
+            #else
+            RealisticVehicleEngine[] vehicles = FindObjectsOfType<RealisticVehicleEngine>();
+            #endif
+
             foreach (RealisticVehicleEngine vehicle in vehicles)
             {
                 float distance = Vector3.Distance(transform.position, vehicle.transform.position);
