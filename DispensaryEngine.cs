@@ -38,42 +38,22 @@ public class DispensaryEngine : MonoBehaviour
     {
         if (shopPanel != null) shopPanel.SetActive(false);
         if (promptTooltipUI != null) promptTooltipUI.SetActive(false);
-        
-        for (int i = 0; i < menuItems.Length; i++)
-        {
-            menuItems[i].currentPrice = menuItems[i].basePrice;
-        }
+        for (int i = 0; i < menuItems.Length; i++) menuItems[i].currentPrice = menuItems[i].basePrice;
     }
 
     private void Update()
     {
         if (isPlayerNearATM && !isInsideShopMenu)
         {
-            if (promptTooltipUI != null)
-            {
-                promptTooltipUI.SetActive(true);
-                promptTooltipUI.GetComponent<Text>().text = "Press [E] to use Dispensary ATM";
-            }
-
-            if (Input.GetKeyDown(KeyCode.E) || Input.GetKeyDown(KeyCode.JoystickButton5))
-            {
-                InteractWithATM();
-            }
+            if (promptTooltipUI != null) { promptTooltipUI.SetActive(true); promptTooltipUI.GetComponent<Text>().text = "Press [E] to use ATM"; }
+            if (Input.GetKeyDown(KeyCode.E) || Input.GetKeyDown(KeyCode.JoystickButton5)) InteractWithATM();
             return;
         }
 
         if (isPlayerNearCounter && !isInsideShopMenu)
         {
-            if (promptTooltipUI != null)
-            {
-                promptTooltipUI.SetActive(true);
-                promptTooltipUI.GetComponent<Text>().text = "Press [E] to talk to Budtender";
-            }
-
-            if (Input.GetKeyDown(KeyCode.E) || Input.GetKeyDown(KeyCode.JoystickButton5))
-            {
-                OpenDispensary();
-            }
+            if (promptTooltipUI != null) { promptTooltipUI.SetActive(true); promptTooltipUI.GetComponent<Text>().text = "Press [E] to browse Dispensary"; }
+            if (Input.GetKeyDown(KeyCode.E) || Input.GetKeyDown(KeyCode.JoystickButton5)) OpenDispensary();
         }
         else if (!isPlayerNearATM && !isPlayerNearCounter)
         {
@@ -82,26 +62,10 @@ public class DispensaryEngine : MonoBehaviour
 
         if (!isInsideShopMenu) return;
 
-        if (Input.GetKeyDown(KeyCode.DownArrow) || Input.GetKeyDown(KeyCode.S))
-        {
-            shopSelectionIndex = (shopSelectionIndex + 1) % menuItems.Length;
-            RenderShopMenu();
-        }
-        if (Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.W))
-        {
-            shopSelectionIndex = (shopSelectionIndex - 1 + menuItems.Length) % menuItems.Length;
-            RenderShopMenu();
-        }
-
-        if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.JoystickButton0))
-        {
-            TryPurchaseSelectedItem();
-        }
-
-        if (Input.GetKeyDown(KeyCode.Escape) || Input.GetKeyDown(KeyCode.JoystickButton1))
-        {
-            CloseDispensary();
-        }
+        if (Input.GetKeyDown(KeyCode.DownArrow) || Input.GetKeyDown(KeyCode.S)) { shopSelectionIndex = (shopSelectionIndex + 1) % menuItems.Length; RenderShopMenu(); }
+        if (Input.GetKeyDown(KeyCode.UpArrow) || Input.GetKeyDown(KeyCode.W)) { shopSelectionIndex = (shopSelectionIndex - 1 + menuItems.Length) % menuItems.Length; RenderShopMenu(); }
+        if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.JoystickButton0)) TryPurchaseSelectedItem();
+        if (Input.GetKeyDown(KeyCode.Escape) || Input.GetKeyDown(KeyCode.JoystickButton1)) CloseDispensary();
     }
 
     private void OnTriggerEnter(Collider other)
@@ -115,12 +79,7 @@ public class DispensaryEngine : MonoBehaviour
 
     private void OnTriggerExit(Collider other)
     {
-        if (other.CompareTag("Player"))
-        {
-            isPlayerNearATM = false;
-            isPlayerNearCounter = false;
-            CloseDispensary();
-        }
+        if (other.CompareTag("Player")) { isPlayerNearATM = false; isPlayerNearCounter = false; CloseDispensary(); }
     }
 
     public void OpenDispensary()
@@ -128,10 +87,8 @@ public class DispensaryEngine : MonoBehaviour
         if (playerData == null) return;
         isInsideShopMenu = true;
         shopSelectionIndex = 0;
-        
         if (playerScript != null) playerScript.enabled = false;
         if (shopPanel != null) shopPanel.SetActive(true);
-
         CalculateDailyDeals();
         RenderShopMenu();
     }
@@ -141,10 +98,7 @@ public class DispensaryEngine : MonoBehaviour
         discountItemIndex = Random.Range(0, menuItems.Length);
         for (int i = 0; i < menuItems.Length; i++)
         {
-            if (i == discountItemIndex)
-                menuItems[i].currentPrice = Mathf.RoundToInt(menuItems[i].basePrice * 0.80f);
-            else
-                menuItems[i].currentPrice = menuItems[i].basePrice;
+            menuItems[i].currentPrice = (i == discountItemIndex) ? Mathf.RoundToInt(menuItems[i].basePrice * 0.80f) : menuItems[i].basePrice;
         }
     }
 
@@ -158,28 +112,30 @@ public class DispensaryEngine : MonoBehaviour
     private void RenderShopMenu()
     {
         if (shopText == null || playerData == null) return;
-
         shopText.text = "<b>=== GREEN LEAF DISPENSARY ===</b>\nCUSTOMER WALLET: $" + playerData.cashBalance + "\n\n";
         for (int i = 0; i < menuItems.Length; i++)
         {
-            string dealTag = (i == discountItemIndex) ? " <color=green>[🔥 DAILY SPECIAL - 20% OFF]</color>" : "";
-            if (i == shopSelectionIndex)
-                shopText.text += " > [" + menuItems[i].itemName + "] - $" + menuItems[i].currentPrice + dealTag + " <\n";
-            else
-                shopText.text += "   " + menuItems[i].itemName + " - $" + menuItems[i].currentPrice + dealTag + "\n";
+            string dealTag = (i == discountItemIndex) ? " <color=green>[🔥 20% OFF]</color>" : "";
+            shopText.text += (i == shopSelectionIndex) ? " > [" + menuItems[i].itemName + "] - $" + menuItems[i].currentPrice + dealTag + " <\n" : "   " + menuItems[i].itemName + " - $" + menuItems[i].currentPrice + dealTag + "\n";
         }
-        shopText.text += "\n<i>[Space/A] Buy | [Escape/B] Exit Counter</i>";
+        shopText.text += "\n<i>[Space] Buy | [Escape] Exit Counter</i>";
     }
 
     private void TryPurchaseSelectedItem()
     {
         if (playerData == null) return;
         DispensaryItem selectedProduct = menuItems[shopSelectionIndex];
-
         if (playerData.cashBalance >= selectedProduct.currentPrice)
         {
             playerData.cashBalance -= selectedProduct.currentPrice;
             playerData.playerInventory.Add(selectedProduct.itemName);
+            
+            // Check if player had a mission to buy items
+            if (playerData.activeMissionObjective.Contains("Buy") && playerData.activeMissionObjective.Contains(selectedProduct.itemName))
+            {
+                playerData.CompleteActiveMission();
+            }
+
             playerData.UpdateHUD();
             RenderShopMenu();
         }
@@ -190,6 +146,5 @@ public class DispensaryEngine : MonoBehaviour
         if (playerData == null) return;
         playerData.cashBalance += 500; 
         playerData.UpdateHUD();
-        Debug.Log("Withdrew $500 cash from the bank vault via ATM.");
     }
 }
