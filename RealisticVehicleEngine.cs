@@ -17,11 +17,6 @@ public class RealisticVehicleEngine : MonoBehaviour
 
     private void Start()
     {
-        ConfigureCarPerformanceSpecs();
-    }
-
-    private void ConfigureCarPerformanceSpecs()
-    {
         if (specificModel == VehicleType.TeslaCybertruck)
         {
             engineHorsepower = 3200f;       
@@ -46,16 +41,12 @@ public class RealisticVehicleEngine : MonoBehaviour
     {
         if (playerScript != null && playerScript.isDriving)
         {
-            if (Input.GetKeyDown(KeyCode.F) || Input.GetKeyDown(KeyCode.JoystickButton2))
-            {
-                ExitVehicle();
-            }
+            if (Input.GetKeyDown(KeyCode.F) || Input.GetKeyDown(KeyCode.JoystickButton2)) ExitVehicle();
         }
     }
 
     private void FixedUpdate()
     {
-        // Police cruiser interceptor AI chase tracking logic
         if (specificModel == VehicleType.PoliceCruiser && playerScript != null && playerScript.wantedLevel > 0)
         {
             ExecutePoliceAIChase();
@@ -74,12 +65,9 @@ public class RealisticVehicleEngine : MonoBehaviour
             brakeTrigger = Input.GetKey(KeyCode.S) ? 1.0f : 0.0f;
         }
 
-        float speedInMPH = vehicleRigidbody.velocity.magnitude * 2.23694f;
-
-        // Reckless driving auto-wanted-level calculation
-        if (speedInMPH > 90f && playerScript.wantedLevel < 2)
+        if (vehicleRigidbody.velocity.magnitude * 2.23694f > 90f && playerScript.wantedLevel < 2)
         {
-            playerScript.TriggerCrimeAlert(2); // Instantly triggers a 2-Star Chase
+            playerScript.TriggerCrimeAlert(2);
         }
 
         if (vehicleRigidbody.velocity.magnitude < electronicTopSpeed)
@@ -105,26 +93,19 @@ public class RealisticVehicleEngine : MonoBehaviour
 
     private void ExecutePoliceAIChase()
     {
-        // Path straight to the player position
         Vector3 playerPos = playerScript.transform.position;
         transform.LookAt(new Vector3(playerPos.x, transform.position.y, playerPos.z));
         
-        float distance = Vector3.Distance(transform.position, playerPos);
-        if (distance > 4f)
+        if (Vector3.Distance(transform.position, playerPos) > 4f)
         {
             vehicleRigidbody.AddForce(transform.forward * engineHorsepower * 0.45f * Time.fixedDeltaTime, ForceMode.VelocityChange);
         }
-        else
+        else if (!playerScript.isDriving)
         {
-            // Busted check! If police car touches player for too long, clear wallet as a fine
-            if (!playerScript.isDriving)
-            {
-                playerScript.wantedLevel = 0;
-                playerScript.inventoryData.cashBalance = Mathf.Max(0, playerScript.inventoryData.cashBalance - 1000);
-                playerScript.inventoryData.UpdateHUD();
-                playerScript.transform.position = new Vector3(0, 1, 0); // Respawn at precinct center
-                Debug.LogWarning("BUSTED! Fined $1,000 and towed back to station.");
-            }
+            playerScript.wantedLevel = 0;
+            playerScript.inventoryData.cashBalance = Mathf.Max(0, playerScript.inventoryData.cashBalance - 1000);
+            playerScript.inventoryData.UpdateHUD();
+            playerScript.transform.position = new Vector3(0, 1, 0); 
         }
     }
 
@@ -140,7 +121,6 @@ public class RealisticVehicleEngine : MonoBehaviour
     {
         if (playerScript == null) return;
         playerScript.transform.SetParent(null); 
-        Vector3 exitSideOffset = transform.position - (transform.right * 1.8f) + (Vector3.up * 0.5f);
-        playerScript.TeleportAndExitVehicle(exitSideOffset);
+        playerScript.TeleportAndExitVehicle(transform.position - (transform.right * 1.8f) + (Vector3.up * 0.5f));
     }
 }
